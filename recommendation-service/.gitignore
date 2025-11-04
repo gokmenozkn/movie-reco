@@ -1,0 +1,22 @@
+venv/
+
+.env
+.env.*
+!.env.example
+
+# 2. Python Cache
+# Python'ın derlenmiş 'bytecode' dosyaları.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 3. Model & Veri Artifact'leri (ÖNEMLİ)
+*.pkl
+*.h5
+*.joblib
+
+.vscode/
+.idea/
+
+*.log

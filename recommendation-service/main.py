@@ -5,6 +5,7 @@ import pandas as pd
 import os
 from typing import List
 from schemas.movie import PopularMovieResponse
+from routers import router as api_router
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "recommendation_model.pkl")
@@ -19,6 +20,8 @@ print("Uygulama başarıyla başlatıldı ve hazır.")
 app = FastAPI(
   title="Movie Reco"
 )
+
+app.include_router(api_router)
 
 # --- 5. API ENDPOINTS (DIŞARIYA AÇILAN FONKSİYONLAR) ---
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.session import get_db
 from services import import_service
+from core.config import settings
 
 router = APIRouter(prefix="/movies", tags=["movies"])
 
@@ -19,8 +20,8 @@ async def create_movies(
     """
 
     # CSV dosyalarınızın bulunduğu yolları buraya yazın
-    MOVIES_METADATA_PATH = "movies_metadata.csv"
-    RATINGS_PATH = "ratings_small.csv"
+    MOVIES_METADATA_PATH = settings.movies_path # "movies_metadata.csv"
+    RATINGS_PATH = settings.ratings_path # "ratings_small.csv"
 
     try:
         print("Veri aktarımı başlıyor...")
@@ -36,7 +37,7 @@ async def create_movies(
 
     except FileNotFoundError as e:
         print(f"HATA: Dosya bulunamadı - {e.filename}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Dosya bulunamadı: {e.filename}"

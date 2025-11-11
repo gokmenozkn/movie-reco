@@ -2,7 +2,8 @@ import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import Movie, Rating, Genre
 from sqlalchemy.future import select
-import math, ast, datetime
+import math, ast
+from datetime import datetime
 
 """
 class Movie(Base):
@@ -57,7 +58,7 @@ async def import_movies_and_genres_from_csv(session: AsyncSession, csv_path: str
 
   for _, row in df.iterrows():
     try:
-      movie_id = int(row["id"]),
+      movie_id = int(row["id"])
     except (ValueError, TypeError):
       continue
 

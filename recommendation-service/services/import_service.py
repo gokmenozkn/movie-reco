@@ -2,8 +2,10 @@ import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import Movie, Rating, Genre
 from sqlalchemy.future import select
+
 import math, ast
 from datetime import datetime
+from typing import List, Optional, Dict, Set, Tuple
 
 """
 class Movie(Base):
@@ -20,6 +22,30 @@ class Movie(Base):
   vote_average = Column(Float)
   vote_count = Column(Integer)
 """
+
+def _parse_int(val) -> Optional[int]:
+  try:
+    if pd.isna(val): 
+      return None
+    return int(str(val).strip())
+  except (ValueError, TypeError):
+    return None
+  
+def _parse_float(val, default: float = 0.0) -> float:
+  try:
+    if pd.isna(val):
+      return default
+    v = float(val)
+    return default if math.isnan(v) else v
+  except (ValueError, TypeError):
+    return default
+  
+def _parse_date(val) -> Optional[datetime]:
+  if pd.isna(val):
+    return None
+  s = str(val).strip()
+  if not s:
+    return None
 
 async def import_movies_from_csv(session: AsyncSession, csv_path: str):
   movie_df = pd.read_csv(csv_path)
@@ -48,25 +74,51 @@ async def import_movies_from_csv(session: AsyncSession, csv_path: str):
   API endpoint'i karar verecektir.
 """
 async def import_movies_and_genres_from_csv(session: AsyncSession, csv_path: str):
-  df = pd.read_csv(csv_path)
+  df = pd.read_csv(csv_path, low_memory=False)
+
+  # id alanını düzelt
+  df["id"] = df["id"].apply(_parse_int)
+  df = df.dropna(subset=["id"])
+  df["id"] = df["id"].astype(int)
+
+  # birden fazla id içermesin
+  df = df.drop_duplicates(subset=["id"], keep="first")
+
+  # Halihazırda DB’de olan Movie id’lerini al → duplicate eklemeyi engelle
+  existing_ids: Set[int] = set(
+    (await session.execute(select(Movie.id))).scalars().all()
+  )
 
   # Veritabanında zaten var olan türleri hızlıca aramak için
   existing_genres_result = await session.execute(select(Genre))
   genres_in_db = { genre.id: genre for genre in existing_genres_result.scalars() }
 
-  movies_to_add = []
+  movies_to_add: List[Movie] = []
 
   for _, row in df.iterrows():
-    try:
-      movie_id = int(row["id"])
-    except (ValueError, TypeError):
+    # try:
+    #   movie_id = int(row["id"])
+    # except (ValueError, TypeError):
+    #   continue
+    movie_id = _parse_int(row.get("id"))
+    if movie_id is None:
       continue
 
-    vote_avg = row.get("vote_average")
-    vote_cnt = row.get("vote_count")
+    # ID zaten varsa continue
+    if movie_id in existing_ids:
+      continue
 
-    vote_average = float(vote_avg) if pd.notna(vote_avg) and not math.isnan(float(vote_avg)) else 0.0
-    vote_count = int(vote_cnt) if pd.notna(vote_cnt) and not math.isnan(float(vote_cnt)) else 0
+    # vote_avg = row.get("vote_average")
+    # vote_cnt = row.get("vote_count")
+
+    # vote_average = float(vote_avg) if pd.notna(vote_avg) and not math.isnan(float(vote_avg)) else 0.0
+    # vote_count = int(vote_cnt) if pd.notna(vote_cnt) and not math.isnan(float(vote_cnt)) else 0
+    vote_average = _parse_float(row.get("vote_average"))
+    vote_count = int(_parse_float(row.get("vote_count")))
+    release_dt = _parse_date(row.get("release_date"))
+
+    """
+    # Eski kod
 
     release_date_obj = None
     if pd.notna(row.get("release_date")):
@@ -74,31 +126,36 @@ async def import_movies_and_genres_from_csv(session: AsyncSession, csv_path: str
         release_date_obj = datetime.strptime(str(row["release_date"]), '%Y-%m-%d').date()
       except ValueError:
         release_date_obj = None # Hatalı formatı atla
+    """
     
     # --- 2. Movie Nesnesini Oluşturma ---
     movie = Movie(
       id=movie_id,
-      imdb_id=str(row.get("imdb_id", "")),
-      title=str(row.get("title", "Unknown")),
-      poster_path=str(row.get("poster_path", "")),
+      imdb_id=str(row.get("imdb_id") or ""),
+      title=str(row.get("title") or "Unknown"),
+      poster_path=str(row.get("poster_path") or ""),
       vote_average=vote_average,
       vote_count=vote_count,
-      release_date=release_date_obj,
-      overview=str(row.get("overview", ""))
+      release_date=release_dt,
+      overview=str(row.get("overview") or "")
     )
 
     # --- 3. Genre (İlişkisel) Verisini İşleme ---
     genre_str = row.get("genres")
 
-    if pd.notna(genre_str) and genre_str:
+    if pd.notna(genre_str) and str(genre_str).strip():
       try:
         # ast.literal_eval, "[{'id': 16, 'name': 'Animation'}, ...]" 
         # gibi bir string'i güvenle Python listesine çevirir.
-        genres_list = ast.literal_eval(genre_str)
+        genres_list = ast.literal_eval(str(genre_str))
 
         for genre_data in genres_list:
-          genre_id = int(genre_data['id'])
-          genre_name = genre_data['name']
+          # genre_name = genre_data['name']
+          genre_id = _parse_int(genre_data.get("id"))
+          genre_name = (genre_data.get("name") or "").strip()
+
+          if genre_id is None or not genre_name:
+            continue
 
           # "Get-or-Create" mantığı:
           # Tür, önbelleğimizde (yani DB'de) var mı?
@@ -110,8 +167,7 @@ async def import_movies_and_genres_from_csv(session: AsyncSession, csv_path: str
             session.add(genre_obj) # Yeni türü session'a ekle
             genres_in_db[genre_id] = genre_obj
           
-          # SQLAlchemy'nin sihri burada:
-          # Sadece nesneyi listeye eklemeniz yeterli.
+          # Sadece nesneyi listeye eklemek yeterli.
           # SQLAlchemy, 'movie_genre' ara tablosunu doldurmayı bilir.
           movie.genres.append(genre_obj)
 
@@ -127,8 +183,13 @@ async def import_movies_and_genres_from_csv(session: AsyncSession, csv_path: str
 
 
 async def import_ratings_from_csv(session: AsyncSession, csv_path: str):
-  df = pd.read_csv(csv_path)
-  
+  df = pd.read_csv(csv_path, low_memory=False)
+
+  existing_pairs: Set[Tuple[int, int]] = set(
+    (await session.execute(select(Rating.user_id, Rating.movie_id))).all()
+  )
+
+  """
   ratings_to_add = []
   for _, row in df.iterrows():
     try:
@@ -142,6 +203,38 @@ async def import_ratings_from_csv(session: AsyncSession, csv_path: str):
     except (ValueError, TypeError):
       # hatalı satırları geç
       continue
-
+  
+  
   session.add_all(ratings_to_add)
   print(f"{len(ratings_to_add)} adet reyting oturuma eklendi.")
+
+  """
+
+  new_ratings: List[Rating] = []
+
+  for _, row in df.iterrows():
+    user_id = _parse_int(row.get("userId"))
+    movie_id = _parse_int(row.get("movie_id"))
+    
+    if user_id is None or movie_id is None:
+      continue
+
+    key = (user_id, movie_id)
+    if key in existing_pairs:
+      continue
+
+    rating_val = _parse_float(row.get("rating"), default=None)
+    if rating_val is None:
+      continue
+
+    new_ratings.append(
+      Rating(
+        user_id=user_id,
+        movie_id=movie_id,
+        rating=rating_val
+      )
+    )
+    existing_pairs.add(key)
+
+  if new_ratings:
+    session.add_all(new_ratings)

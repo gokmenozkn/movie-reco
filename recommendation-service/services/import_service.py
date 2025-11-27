@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import Movie, Rating, Genre
 from sqlalchemy.future import select
 
-import math, ast
+import math
+import ast
 from datetime import datetime
 from typing import List, Optional, Dict, Set, Tuple
 
@@ -28,7 +29,14 @@ def _parse_int(val) -> Optional[int]:
     try:
         if pd.isna(val):
             return None
-        return int(str(val).strip())
+
+        v_float = float(val)
+
+        if math.isnan(v_float):
+            return None
+
+        return int(v_float)
+        # return int(str(val).strip())
     except (ValueError, TypeError):
         return None
 
@@ -57,6 +65,7 @@ def _parse_date(val) -> Optional[datetime]:
         except ValueError:
             continue
     return None
+
 
 async def import_movies_from_csv(session: AsyncSession, csv_path: str):
     movie_df = pd.read_csv(csv_path)
@@ -201,32 +210,11 @@ async def import_ratings_from_csv(session: AsyncSession, csv_path: str):
         (await session.execute(select(Rating.user_id, Rating.movie_id))).all()
     )
 
-    """
-  ratings_to_add = []
-  for _, row in df.iterrows():
-    try:
-      rating = Rating(
-        user_id = int(row["userId"]),
-        movie_id = int(row["movieId"]),
-        rating = float(row["rating"]),
-      )
-      ratings_to_add.append(rating)
-      # session.add(rating)
-    except (ValueError, TypeError):
-      # hatalı satırları geç
-      continue
-  
-  
-  session.add_all(ratings_to_add)
-  print(f"{len(ratings_to_add)} adet reyting oturuma eklendi.")
-
-  """
-
     new_ratings: List[Rating] = []
 
     for _, row in df.iterrows():
         user_id = _parse_int(row.get("userId"))
-        movie_id = _parse_int(row.get("movie_id"))
+        movie_id = _parse_int(row.get("movieId"))
 
         if user_id is None or movie_id is None:
             continue
@@ -235,7 +223,7 @@ async def import_ratings_from_csv(session: AsyncSession, csv_path: str):
         if key in existing_pairs:
             continue
 
-        rating_val = _parse_float(row.get("rating"), default=None)
+        rating_val = _parse_float(row["rating"], default=None)
         if rating_val is None:
             continue
 
@@ -246,3 +234,5 @@ async def import_ratings_from_csv(session: AsyncSession, csv_path: str):
 
     if new_ratings:
         session.add_all(new_ratings)
+
+    print(f"{len(new_ratings)} adet yeni reyting oturuma eklendi.")

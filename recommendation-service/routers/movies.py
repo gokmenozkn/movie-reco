@@ -8,7 +8,7 @@ from core.config import settings
 router = APIRouter(prefix="/movies", tags=["movies"])
 
 @router.get("/popular")
-def get_popular(
+async def get_popular(
     db: AsyncSession = Depends(get_db)
 ):
     MODEL_PATH = ""
@@ -17,7 +17,7 @@ def get_popular(
 
         reco_service = RecommendationService(MODEL_PATH)
 
-        popular_movies_df = reco_service.get_popular_movies(session=db)
+        popular_movies_df = await reco_service.get_popular_movies(session=db)
         popular_movies_list = popular_movies_df.to_dict('records')
 
         return {

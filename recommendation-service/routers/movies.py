@@ -2,13 +2,35 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.session import get_db
 from services import import_service
+from services.recommendation_service import RecommendationService
 from core.config import settings
 
 router = APIRouter(prefix="/movies", tags=["movies"])
 
 @router.get("/popular")
-def get_popular():
-    return { "message": "Popüler filmler yakında" }
+def get_popular(
+    db: AsyncSession = Depends(get_db)
+):
+    MODEL_PATH = ""
+
+    try:
+
+        reco_service = RecommendationService(MODEL_PATH)
+
+        popular_movies_df = reco_service.get_popular_movies(session=db)
+        popular_movies_list = popular_movies_df.to_dict('records')
+
+        return {
+            "message": "Popüler filmler yakında",
+            "data": popular_movies_list
+        }
+    
+    except Exception as e:
+        print(f"Popüler filmleri alırken hata oluştu: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Popüler filmler alınırken hata oluştu: {str(e)}"
+        )
 
 @router.post("/create", status_code=status.HTTP_201_CREATED)
 async def create_movies(

@@ -1,6 +1,9 @@
 from surprise import dump
 from fastapi import FastAPI, HTTPException
 from routers import router as api_router
+from core.logger import configure_logging
+
+configure_logging()
 
 print("Uygulama başarıyla başlatıldı ve hazır.")
 

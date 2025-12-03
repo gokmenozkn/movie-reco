@@ -7,71 +7,69 @@ from core.config import settings
 
 router = APIRouter(prefix="/movies", tags=["movies"])
 
+
 @router.get("/popular")
-async def get_popular(
-    db: AsyncSession = Depends(get_db)
-):
+async def get_popular(db: AsyncSession = Depends(get_db)):
     MODEL_PATH = ""
 
     try:
-
         reco_service = RecommendationService(MODEL_PATH)
 
         popular_movies_df = await reco_service.get_popular_movies(session=db)
-        popular_movies_list = popular_movies_df.to_dict('records')
+        popular_movies_list = popular_movies_df.to_dict("records")
 
-        return {
-            "message": "Popüler filmler yakında",
-            "data": popular_movies_list
-        }
-    
+        return {"message": "Popüler filmler yakında", "data": popular_movies_list}
+
     except Exception as e:
         print(f"Popüler filmleri alırken hata oluştu: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Popüler filmler alınırken hata oluştu: {str(e)}"
+            detail=f"Popüler filmler alınırken hata oluştu: {str(e)}",
         )
 
+
 @router.post("/create", status_code=status.HTTP_201_CREATED)
-async def create_movies(
-    db: AsyncSession = Depends(get_db)
-):
+async def create_movies(db: AsyncSession = Depends(get_db)):
     """
     CSV dosyalarından filmleri, türleri ve reytingleri veritabanına aktarır.
     Tüm işlemler 'atomik' bir transaction içinde yürütülür.
     """
 
     # CSV dosyalarınızın bulunduğu yolları buraya yazın
-    MOVIES_METADATA_PATH = settings.movies_path # "movies_metadata.csv"
-    RATINGS_PATH = settings.ratings_path # "ratings_small.csv"
+    MOVIES_METADATA_PATH = settings.movies_path  # "movies_metadata.csv"
+    RATINGS_PATH = settings.ratings_path  # "ratings_small.csv"
 
     try:
         print("Veri aktarımı başlıyor...")
 
-        await import_service.import_movies_and_genres_from_csv(session=db, csv_path=MOVIES_METADATA_PATH)
+        await import_service.import_movies_and_genres_from_csv(
+            session=db, csv_path=MOVIES_METADATA_PATH
+        )
 
         await import_service.import_ratings_from_csv(session=db, csv_path=RATINGS_PATH)
 
         await db.commit()
 
         print("Veri aktarımı başarıyla tamamlandı.")
-        return {"message": "Filmler, türler ve reytingler başarıyla veritabanına aktarıldı."}
+        return {
+            "message": "Filmler, türler ve reytingler başarıyla veritabanına aktarıldı."
+        }
 
     except FileNotFoundError as e:
         print(f"HATA: Dosya bulunamadı - {e.filename}")
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Dosya bulunamadı: {e.filename}"
+            detail=f"Dosya bulunamadı: {e.filename}",
         )
-    
+
     except Exception as e:
         # Eğer import_movies veya import_ratings sırasında herhangi bir hata olursa,
         # 'commit' asla çalışmaz ve 'rollback' ile tüm değişiklikler geri alınır.
         # Veritabanınız güvende kalır.
         print(f"HATA: Veri aktarımı sırasında bir hata oluştu: {str(e)}")
-        await db.rollback() # İşlemi geri al
+        await db.rollback()  # İşlemi geri al
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Veri aktarımı başarısız oldu: {str(e)}"
+            detail=f"Veri aktarımı başarısız oldu: {str(e)}",
         )

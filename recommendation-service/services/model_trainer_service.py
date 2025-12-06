@@ -6,6 +6,10 @@ from sqlalchemy.future import select
 from models.database import Rating
 import logging
 
+from datetime import datetime
+from pathlib import Path
+from core.config import settings
+
 
 class ModelTrainerService:
     async def _load_ratings_from_db(self, session: AsyncSession) -> pd.DataFrame:
@@ -28,8 +32,21 @@ class ModelTrainerService:
                 f"Model eğitmek için Rating tablosu yüklenirken bir hata oluştu: {e}"
             )
 
-    async def train_and_save_model(self, session: AsyncSession, model_path: str):
+    async def train_and_save_model(self, session: AsyncSession):
+        LATEST_REF_FILE: Path = settings.ml_models_dir / "LATEST_MODEL_PATH.txt"
+
         try:
+            model_dir: Path = settings.ml_models_dir
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            model_filename = f"svd_model_{timestamp}.surprise"
+            final_path = (
+                model_dir / model_filename
+            )  # artifacts/svd_model_20251206_230000.surprise
+
+            # Klasör yoksa oluştur
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+
             ratings_df = await self._load_ratings_from_db(session)
 
             if ratings_df.empty:
@@ -67,8 +84,18 @@ class ModelTrainerService:
 
             # Modeli dosyaya kaydet
             try:
-                dump.dump(model_path, algo=algo)
-                logging.info(f"Model başarıyla {model_path} konumuna kaydedildi.")
+                dump.dump(str(final_path), algo=algo)
+                logging.info(f"Model başarıyla {final_path} konumuna kaydedildi.")
+
+                try:
+                    with open(LATEST_REF_FILE, "w") as f:
+                        f.write(model_filename)
+
+                    logging.info(f"'{model_filename}' en son model olarak işaretlendi.")
+
+                except Exception as e:
+                    logging.error(f"LATEST_MODEL_PATH.txt güncellenemedi: {e}")
+
             except IOError as e:
                 logging.error(f"Model dosyaya kaydedilemedi (IO Hatası): {e}")
 
